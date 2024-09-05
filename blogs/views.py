@@ -6,7 +6,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from utils.helpers import get_or_none
 from .models import Blog, UserRating
-from .serializers import BlogSerializer, BlogListSerializer, UserRatingSerializer
+from .tasks import create_or_update_rating
+from .serializers import BlogSerializer, BlogListSerializer
 
 
 class BlogListView(APIView):
@@ -49,12 +50,7 @@ class RateBlogAPIView(APIView):
 		blog = get_object_or_404(Blog, id=blog_id)
 		rate = request.data.get('rate')
 
-		# Add or update the user rating for the blog
-		user_rating, created = UserRating.objects.update_or_create(
-			user=request.user,
-			blog=blog,
-			defaults={'rate': rate}
-		)
+		# Use Celery task to update or create the user rating
+		create_or_update_rating.delay(request.user.id, blog.id, rate)
 
-		serializer = UserRatingSerializer(user_rating)
-		return Response(serializer.data, status=status.HTTP_200_OK)
+		return Response({"detail": "Rating submitted successfully!"}, status=status.HTTP_200_OK)

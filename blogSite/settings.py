@@ -111,3 +111,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = '/accounts/login/'  # Redirect to login page if not authenticated
 LOGIN_REDIRECT_URL = '/blogs/'  # Redirect to this URL after login
 LOGOUT_REDIRECT_URL = '/accounts/login/'  # Redirect to this URL after logout
+
+# Celery settings
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Redis as the broker
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'  # Redis as the result backend
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
