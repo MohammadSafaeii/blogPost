@@ -19,6 +19,7 @@ class RatingBin(models.Model):
 	blog = models.ForeignKey(Blog, on_delete=models.CASCADE)
 	average = models.DecimalField(max_digits=3, decimal_places=1)
 	rating_count = models.PositiveIntegerField(default=0)
+	need_update = models.BooleanField(default=False)
 	created_at = models.DateTimeField(auto_now_add=True)
 	# weight_based_on_average = models.FloatField()
 	# weight_based_on_rating_count = models.FloatField()

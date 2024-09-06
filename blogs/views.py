@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from utils.helpers import get_or_none
 from .models import Blog, UserRating
-from .tasks import create_or_update_rating
+from .tasks import create_or_update_user_rating
 from .serializers import BlogSerializer, BlogListSerializer
 
 
@@ -51,6 +51,6 @@ class RateBlogAPIView(APIView):
 		rate = request.data.get('rate')
 
 		# Use Celery task to update or create the user rating
-		create_or_update_rating.delay(request.user.id, blog.id, rate)
+		create_or_update_user_rating.delay(request.user.id, blog.id, rate)
 
 		return Response({"detail": "Rating submitted successfully!"}, status=status.HTTP_200_OK)

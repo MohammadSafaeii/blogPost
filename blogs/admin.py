@@ -7,7 +7,7 @@ class BlogAdmin(admin.ModelAdmin):
 
 
 class RatingBinAdmin(admin.ModelAdmin):
-	list_display = ('id', 'blog', 'average', 'rating_count', 'created_at')
+	list_display = ('id', 'blog', 'average', 'rating_count', 'need_update', 'created_at')
 
 
 class UserRatingAdmin(admin.ModelAdmin):
