@@ -14,11 +14,10 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
 
-# can handle this cronjob it in django admin
-# TODO: make it every day
+# can handle this cronjob in django admin
 app.conf.beat_schedule = {
     'create-rating-bins-every-day': {
         'task': 'blogs.tasks.updating_blogs_process',
-        'schedule': crontab(minute='*', hour='*'),  # Runs every hour at minute 0
+        'schedule': crontab(hour='0', minute='0'),  # Runs every day
     },
 }

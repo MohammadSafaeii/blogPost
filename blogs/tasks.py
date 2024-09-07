@@ -1,5 +1,8 @@
+import pandas as pd
+from statsmodels.tsa.seasonal import STL
 from celery import shared_task
 from django.contrib.auth.models import User
+from blogSite.constants import ANOMALOUS_DATA_WEIGHT
 from .models import Blog, UserRating, RatingBin
 from django.db.models import Avg, Count, Sum, F
 
@@ -40,6 +43,8 @@ def create_rating_bin(blog_id):
 		rating_count=Count('id')
 	)
 
+	should_update_blog = False
+
 	# Check if there are any user ratings to process
 	if rate_values['rating_count'] > 0:
 		# Create the RatingBin row for the blog
@@ -50,12 +55,13 @@ def create_rating_bin(blog_id):
 		)
 		# Update the UserRating rows to link to the RatingBin
 		unrated_user_ratings.update(rating_bin=rating_bin)
+		should_update_blog = True
 
-	update_rating_bins.delay(blog_id)
+	update_rating_bins.delay(blog_id, should_update_blog)
 
 
 @shared_task
-def update_rating_bins(blog_id):
+def update_rating_bins(blog_id, should_update_blog):
 	# Query all RatingBin records where need_update is True
 	rating_bins_to_update = RatingBin.objects.filter(blog=blog_id, need_update=True)
 
@@ -70,23 +76,89 @@ def update_rating_bins(blog_id):
 		rating_bin.average = new_average
 		rating_bin.need_update = False  # Reset need_update to False
 		rating_bin.save()
+		should_update_blog = True
 
-	update_blog.delay(blog_id)
+	# check if any rating bin created or updated, we should re-calculate average
+	if should_update_blog:
+		update_blog.delay(blog_id)
 
 
 @shared_task
 def update_blog(blog_id):
-	# Update the average for the specific blog based on its RatingBins
-	rating_bins = RatingBin.objects.filter(blog=blog_id).aggregate(
-		total_weighted_average=Sum(F('average') * F('rating_count')),
-		total_rating_count=Sum('rating_count')
-	)
-
-	# Calculate the new average for the blog
-	total_weighted_average = rating_bins['total_weighted_average'] or 0
-	total_rating_count = rating_bins['total_rating_count'] or 0
+	# calculate rating parameters
+	blog_average, total_rating_count = calculate_rating_parameters(blog_id)
 
 	# update blog rate fields if we have at least one rate
 	if total_rating_count > 0:
-		blog_average = total_weighted_average / total_rating_count
 		Blog.objects.filter(id=blog_id).update(average=blog_average, rating_count=total_rating_count)
+
+
+def calculate_rating_parameters(blog_id):
+	rating_bins = RatingBin.objects.filter(blog=blog_id)
+	rating_bins_count = rating_bins.count()
+	if rating_bins_count > 7:
+		blog_average, total_rating_count = calculate_weight_rating_parameters(rating_bins, rating_bins_count)
+	else:
+		blog_average, total_rating_count = calculate_exact_rating_parameters(rating_bins)
+	return blog_average, total_rating_count
+
+
+def calculate_exact_rating_parameters(rating_bins):
+	rating_bins_parameters = rating_bins.aggregate(
+		total_sum=Sum(F('average') * F('rating_count')),
+		total_rating_count=Sum('rating_count')
+	)
+
+	# Calculate new rating parameters for the blog
+	total_sum = rating_bins_parameters['total_sum'] or 0
+	total_rating_count = rating_bins_parameters['total_rating_count'] or 0
+	blog_average = 0
+
+	# calculate blog average if we have at least one rate
+	if total_rating_count > 0:
+		blog_average = total_sum / total_rating_count
+
+	return blog_average, total_rating_count
+
+
+def calculate_weight_rating_parameters(rating_bins, rating_bins_count):
+	# Fetching the data sorted by 'created_at' (timestamps)
+	rating_bins_sorted = rating_bins.order_by('created_at')
+
+	# Convert the data to a pandas DataFrame
+	data = pd.DataFrame({
+		'Ratings': [rb.rating_count for rb in rating_bins_sorted],
+		'Averages': [rb.average for rb in rating_bins_sorted]
+	})
+
+	# Perform STL decomposition
+	seasonal_number = rating_bins_count if rating_bins_count % 2 != 0 else rating_bins_count + 1
+	stl = STL(data['Ratings'], seasonal=seasonal_number, period=7)
+	result = stl.fit()
+	residuals = result.resid
+
+	# Calculate standard deviation of residuals
+	residuals_std = residuals.std()
+
+	# Initialize variables for calculating total weighted average
+	total_weighted_sum = 0
+	total_weighted_rating_count = 0
+
+	# Modify the weighting of rows with high residuals
+	for i, row in data.iterrows():
+		weight = 1  # Default weight
+		if residuals[i] > 3 * residuals_std:
+			weight = ANOMALOUS_DATA_WEIGHT  # Apply lower weight to rows with high residuals (anomalies)
+
+		# Calculate total weighted sum and total rating count
+		total_weighted_sum += row['Averages'] * row['Ratings'] * weight
+		total_weighted_rating_count += row['Ratings'] * weight
+
+	# Calculate the total weighted average
+	if total_weighted_rating_count > 0:
+		blog_average = total_weighted_sum / total_weighted_rating_count
+	else:
+		blog_average = 0
+
+	return blog_average, int(total_weighted_rating_count)
+
