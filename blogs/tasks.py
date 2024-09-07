@@ -2,7 +2,7 @@ import pandas as pd
 from statsmodels.tsa.seasonal import STL
 from celery import shared_task
 from django.contrib.auth.models import User
-from blogSite.constants import ANOMALOUS_DATA_WEIGHT
+from blogSite.constants import ANOMALOUS_DATA_WEIGHT, ANOMALOUS_DATA_DETECTION_THRESHOLD
 from .models import Blog, UserRating, RatingBin
 from django.db.models import Avg, Count, Sum, F
 
@@ -147,7 +147,7 @@ def calculate_weight_rating_parameters(rating_bins, rating_bins_count):
 	# Modify the weighting of rows with high residuals
 	for i, row in data.iterrows():
 		weight = 1  # Default weight
-		if residuals[i] > 3 * residuals_std:
+		if residuals[i] > ANOMALOUS_DATA_DETECTION_THRESHOLD * residuals_std:
 			weight = ANOMALOUS_DATA_WEIGHT  # Apply lower weight to rows with high residuals (anomalies)
 
 		# Calculate total weighted sum and total rating count
